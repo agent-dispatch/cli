@@ -1,0 +1,29 @@
+{
+  "name": "@agentdispatch/cli",
+  "version": "0.1.0",
+  "description": "Command-line interface for AgentDispatch.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "bin": {
+    "agentdispatch": "./dist/index.js"
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@agentdispatch/adapter-aws-agentcore": "file:../agentdispatch-adapter-aws-agentcore",
+    "@agentdispatch/core": "file:../agentdispatch-core",
+    "@agentdispatch/sdk": "file:../agentdispatch-sdk-js",
+    "@agentdispatch/store-sqlite": "file:../agentdispatch-store-sqlite",
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}
