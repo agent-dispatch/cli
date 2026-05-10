@@ -1,58 +1,94 @@
 #!/usr/bin/env node
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { RuntimeService, type AgentDispatchConfig } from "@agentdispatch/core";
 import { AgentDispatchClient } from "@agentdispatch/sdk";
 import { SqliteTaskStore } from "@agentdispatch/store-sqlite";
 import { AwsAgentCoreAdapter } from "@agentdispatch/adapter-aws-agentcore";
 
-const program = new Command();
+export function buildProgram(output: Pick<Console, "log" | "error"> = console): Command {
+  const program = new Command();
 
-program.name("agentdispatch").description("Provider-neutral agent task dispatcher").version("0.1.0");
+  program.name("agentdispatch").description("Provider-neutral agent task dispatcher").version("0.1.0");
 
-program
-  .command("run")
-  .requiredOption("--provider <provider>")
-  .requiredOption("--account-profile <name>")
-  .requiredOption("--capability <capability>")
-  .requiredOption("--task-type <type>")
-  .option("--target-mode <mode>", "Target mode", "session")
-  .option("--instruction <text>")
-  .option("--command <command>")
-  .option("--config <path>", "Config file", "agentdispatch.config.json")
-  .action(async (options) => {
-    const client = await createClient(options.config);
-    const handle = await client.dispatchTask({
-      provider: options.provider,
-      accountProfile: options.accountProfile,
-      capability: options.capability,
-      taskType: options.taskType,
-      target: { mode: options.targetMode },
-      input: { instruction: options.instruction, command: options.command }
+  program
+    .command("init")
+    .option("--config <path>", "Config file", "agentdispatch.config.json")
+    .option("--runtime-arn <arn>", "Existing AWS AgentCore runtime ARN", "arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/example")
+    .option("--region <region>", "AWS region", "us-west-2")
+    .action(async (options) => {
+      const config = sampleConfig(options.region, options.runtimeArn);
+      await writeFile(options.config, `${JSON.stringify(config, null, 2)}\n`);
+      output.log(`Wrote ${options.config}`);
     });
-    console.log(JSON.stringify(handle, null, 2));
+
+  program
+    .command("providers")
+    .option("--config <path>", "Config file", "agentdispatch.config.json")
+    .action(async (options) => {
+      output.log(JSON.stringify((await createClient(options.config)).listProviders(), null, 2));
+    });
+
+  program
+    .command("capabilities")
+    .option("--provider <provider>")
+    .option("--config <path>", "Config file", "agentdispatch.config.json")
+    .action(async (options) => {
+      output.log(JSON.stringify((await createClient(options.config)).listCapabilities(options.provider), null, 2));
+    });
+
+  program
+    .command("accounts")
+    .option("--config <path>", "Config file", "agentdispatch.config.json")
+    .action(async (options) => {
+      output.log(JSON.stringify((await createClient(options.config)).listAccountProfiles(), null, 2));
+    });
+
+  program
+    .command("run")
+    .requiredOption("--provider <provider>")
+    .requiredOption("--account-profile <name>")
+    .requiredOption("--capability <capability>")
+    .requiredOption("--task-type <type>")
+    .option("--target-mode <mode>", "Target mode", "session")
+    .option("--instruction <text>")
+    .option("--command <command>")
+    .option("--config <path>", "Config file", "agentdispatch.config.json")
+    .action(async (options) => {
+      const client = await createClient(options.config);
+      const handle = await client.dispatchTask({
+        provider: options.provider,
+        accountProfile: options.accountProfile,
+        capability: options.capability,
+        taskType: options.taskType,
+        target: { mode: options.targetMode },
+        input: { instruction: options.instruction, command: options.command }
+      });
+      output.log(JSON.stringify(handle, null, 2));
+    });
+
+  program.command("status").argument("<taskId>").option("--config <path>", "Config file", "agentdispatch.config.json").action(async (taskId, options) => {
+    output.log(JSON.stringify(await (await createClient(options.config)).getTaskStatus(taskId), null, 2));
   });
 
-program.command("status").argument("<taskId>").option("--config <path>", "Config file", "agentdispatch.config.json").action(async (taskId, options) => {
-  console.log(JSON.stringify(await (await createClient(options.config)).getTaskStatus(taskId), null, 2));
-});
+  program.command("logs").argument("<taskId>").option("--config <path>", "Config file", "agentdispatch.config.json").action(async (taskId, options) => {
+    const logs = await (await createClient(options.config)).getTaskLogs(taskId);
+    output.log(logs.data);
+  });
 
-program.command("logs").argument("<taskId>").option("--config <path>", "Config file", "agentdispatch.config.json").action(async (taskId, options) => {
-  const logs = await (await createClient(options.config)).getTaskLogs(taskId);
-  process.stdout.write(logs.data);
-});
+  program.command("result").argument("<taskId>").option("--config <path>", "Config file", "agentdispatch.config.json").action(async (taskId, options) => {
+    output.log(JSON.stringify(await (await createClient(options.config)).getTaskResult(taskId), null, 2));
+  });
 
-program.command("result").argument("<taskId>").option("--config <path>", "Config file", "agentdispatch.config.json").action(async (taskId, options) => {
-  console.log(JSON.stringify(await (await createClient(options.config)).getTaskResult(taskId), null, 2));
-});
+  program.command("cancel").argument("<taskId>").option("--config <path>", "Config file", "agentdispatch.config.json").action(async (taskId, options) => {
+    output.log(JSON.stringify(await (await createClient(options.config)).cancelTask(taskId), null, 2));
+  });
 
-program.command("cancel").argument("<taskId>").option("--config <path>", "Config file", "agentdispatch.config.json").action(async (taskId, options) => {
-  console.log(JSON.stringify(await (await createClient(options.config)).cancelTask(taskId), null, 2));
-});
+  return program;
+}
 
-void program.parseAsync();
-
-async function createClient(configPath: string): Promise<AgentDispatchClient> {
+export async function createClient(configPath: string): Promise<AgentDispatchClient> {
   const config = await loadConfig(configPath);
   const stateDir = config.stateDir ?? ".agentdispatch";
   const store = new SqliteTaskStore({ stateDir });
@@ -73,7 +109,42 @@ async function createClient(configPath: string): Promise<AgentDispatchClient> {
   return new AgentDispatchClient(new RuntimeService({ config, store, adapters }));
 }
 
-async function loadConfig(path: string): Promise<AgentDispatchConfig> {
+export async function loadConfig(path: string): Promise<AgentDispatchConfig> {
   const raw = await readFile(path, "utf8");
   return JSON.parse(raw) as AgentDispatchConfig;
+}
+
+export function sampleConfig(region: string, runtimeArn: string): AgentDispatchConfig {
+  return {
+    stateDir: ".agentdispatch",
+    accounts: {
+      "dev-aws": {
+        provider: "aws",
+        region,
+        credentialSource: "aws-sdk-default"
+      }
+    },
+    backends: {
+      "aws-agentcore": {
+        provider: "aws",
+        capability: "agent-runtime",
+        adapter: "aws-agentcore",
+        account: "dev-aws",
+        details: {
+          runtimeArn,
+          qualifier: "DEFAULT"
+        }
+      }
+    },
+    defaults: {
+      provider: "aws",
+      accountProfile: "dev-aws",
+      capability: "agent-runtime",
+      backend: "aws-agentcore"
+    }
+  };
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  void buildProgram().parseAsync();
 }

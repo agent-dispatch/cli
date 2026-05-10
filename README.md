@@ -3,6 +3,10 @@
 Human/debug command-line interface for AgentDispatch.
 
 ```bash
+agentdispatch init --region us-west-2 --runtime-arn arn:aws:bedrock-agentcore:...
+agentdispatch providers
+agentdispatch capabilities --provider aws
+agentdispatch accounts
 agentdispatch run --provider aws --account-profile dev-aws --capability agent-runtime --task-type agent.run --instruction "Run a long task"
 agentdispatch status task_...
 agentdispatch logs task_...
