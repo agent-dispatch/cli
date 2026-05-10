@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
-import { buildProgram, loadConfig, sampleConfig } from "../src/index.js";
+import { buildProgram, createDispatchRequest, loadConfig, sampleConfig } from "../src/index.js";
 
 let stateDir: string | undefined;
 
@@ -28,6 +28,39 @@ describe("agentdispatch CLI", () => {
   it("builds a provider-neutral sample config", () => {
     expect(sampleConfig("us-east-1", "arn:runtime")).toMatchObject({
       defaults: { provider: "aws", capability: "agent-runtime" }
+    });
+  });
+
+  it("builds dispatch requests from config defaults", () => {
+    const request = createDispatchRequest(sampleConfig("us-east-1", "arn:runtime"), {
+      instruction: "do work",
+      contextJson: "{\"repo\":\"agent-dispatch\"}"
+    });
+    expect(request).toMatchObject({
+      provider: "aws",
+      accountProfile: "dev-aws",
+      capability: "agent-runtime",
+      taskType: "agent.run",
+      input: {
+        instruction: "do work",
+        context: { repo: "agent-dispatch" }
+      }
+    });
+  });
+
+  it("infers command.run and parses target details", () => {
+    const request = createDispatchRequest(sampleConfig("us-east-1", "arn:runtime"), {
+      command: "echo hello",
+      targetMode: "runtime",
+      targetDetailsJson: "{\"ecrImageUri\":\"image\",\"executionRoleArn\":\"role\"}"
+    });
+    expect(request).toMatchObject({
+      taskType: "command.run",
+      target: {
+        mode: "runtime",
+        details: { ecrImageUri: "image", executionRoleArn: "role" }
+      },
+      input: { command: "echo hello" }
     });
   });
 

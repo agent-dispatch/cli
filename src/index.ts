@@ -2,7 +2,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
-import { RuntimeService, validateConfig, type AgentDispatchConfig } from "@agentdispatch/core";
+import { RuntimeService, validateConfig, type AgentDispatchConfig, type DispatchRequest, type TaskStatus } from "@agentdispatch/core";
 import { AgentDispatchClient } from "@agentdispatch/sdk";
 import { SqliteTaskStore } from "@agentdispatch/store-sqlite";
 import { AwsAgentCoreAdapter } from "@agentdispatch/adapter-aws-agentcore";
@@ -47,25 +47,30 @@ export function buildProgram(output: Pick<Console, "log" | "error"> = console): 
 
   program
     .command("run")
-    .requiredOption("--provider <provider>")
-    .requiredOption("--account-profile <name>")
-    .requiredOption("--capability <capability>")
-    .requiredOption("--task-type <type>")
+    .option("--provider <provider>")
+    .option("--account-profile <name>")
+    .option("--capability <capability>")
+    .option("--task-type <type>")
     .option("--target-mode <mode>", "Target mode", "session")
+    .option("--target-details-json <json>", "JSON object merged into target.details")
     .option("--instruction <text>")
     .option("--command <command>")
+    .option("--framework <name>", "Worker-side agent framework name")
+    .option("--context-json <json>", "JSON object passed as input.context")
+    .option("--wait", "Poll until task reaches a terminal status")
+    .option("--poll-interval-ms <ms>", "Wait polling interval", "1000")
+    .option("--timeout-ms <ms>", "Maximum wait time", "600000")
     .option("--config <path>", "Config file", "agentdispatch.config.json")
     .action(async (options) => {
-      const client = await createClient(options.config);
-      const handle = await client.dispatchTask({
-        provider: options.provider,
-        accountProfile: options.accountProfile,
-        capability: options.capability,
-        taskType: options.taskType,
-        target: { mode: options.targetMode },
-        input: { instruction: options.instruction, command: options.command }
-      });
+      const config = await loadConfig(options.config);
+      const client = await createClientFromConfig(config);
+      const request = createDispatchRequest(config, options);
+      const handle = await client.dispatchTask(request);
       output.log(JSON.stringify(handle, null, 2));
+      if (options.wait) {
+        const result = await waitForTask(client, handle.taskId, Number(options.pollIntervalMs), Number(options.timeoutMs));
+        output.log(JSON.stringify(result, null, 2));
+      }
     });
 
   program.command("status").argument("<taskId>").option("--config <path>", "Config file", "agentdispatch.config.json").action(async (taskId, options) => {
@@ -90,6 +95,10 @@ export function buildProgram(output: Pick<Console, "log" | "error"> = console): 
 
 export async function createClient(configPath: string): Promise<AgentDispatchClient> {
   const config = await loadConfig(configPath);
+  return createClientFromConfig(config);
+}
+
+export async function createClientFromConfig(config: AgentDispatchConfig): Promise<AgentDispatchClient> {
   const stateDir = config.stateDir ?? ".agentdispatch";
   const store = new SqliteTaskStore({ stateDir });
   await store.ensureReady();
@@ -145,6 +154,61 @@ export function sampleConfig(region: string, runtimeArn: string): AgentDispatchC
       backend: "aws-agentcore"
     }
   };
+}
+
+export function createDispatchRequest(config: AgentDispatchConfig, options: Record<string, any>): DispatchRequest {
+  const provider = options.provider ?? config.defaults?.provider;
+  const accountProfile = options.accountProfile ?? config.defaults?.accountProfile;
+  const capability = options.capability ?? config.defaults?.capability;
+  const taskType = options.taskType ?? (options.command ? "command.run" : "agent.run");
+  if (!provider || !accountProfile || !capability) {
+    throw new Error("Missing provider/account/capability. Pass CLI options or configure defaults in agentdispatch.config.json.");
+  }
+  return {
+    provider,
+    accountProfile,
+    capability,
+    taskType,
+    target: {
+      mode: options.targetMode ?? "session",
+      details: parseJsonObjectOption(options.targetDetailsJson, "target-details-json")
+    },
+    input: {
+      instruction: options.instruction,
+      command: options.command,
+      framework: options.framework,
+      context: parseJsonObjectOption(options.contextJson, "context-json")
+    }
+  };
+}
+
+async function waitForTask(client: AgentDispatchClient, taskId: string, pollIntervalMs: number, timeoutMs: number) {
+  const startedAt = Date.now();
+  let cursor = 0;
+  while (Date.now() - startedAt <= timeoutMs) {
+    const logs = await client.getTaskLogs(taskId, cursor);
+    cursor = logs.nextCursor;
+    if (logs.data) process.stdout.write(logs.data);
+    const task = await client.getTaskStatus(taskId);
+    if (isTerminal(task.status)) {
+      return client.getTaskResult(taskId);
+    }
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+  }
+  throw new Error(`Timed out waiting for task ${taskId}.`);
+}
+
+function isTerminal(status: TaskStatus): boolean {
+  return status === "succeeded" || status === "failed" || status === "cancelled";
+}
+
+function parseJsonObjectOption(value: string | undefined, name: string): Record<string, unknown> | undefined {
+  if (!value) return undefined;
+  const parsed = JSON.parse(value);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`--${name} must be a JSON object.`);
+  }
+  return parsed as Record<string, unknown>;
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
