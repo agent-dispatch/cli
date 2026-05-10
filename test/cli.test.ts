@@ -23,11 +23,12 @@ describe("agentdispatch CLI", () => {
     expect(output[0]).toContain("Wrote");
     expect(config.accounts["dev-aws"].provider).toBe("aws");
     expect(config.backends["aws-agentcore"].details.runtimeArn).toBe("arn:test");
+    expect(config.runtimes["research-agent"].backend).toBe("aws-agentcore");
   });
 
   it("builds a provider-neutral sample config", () => {
     expect(sampleConfig("us-east-1", "arn:runtime")).toMatchObject({
-      defaults: { provider: "aws", capability: "agent-runtime" }
+      defaults: { runtime: "research-agent" }
     });
   });
 
@@ -40,9 +41,11 @@ describe("agentdispatch CLI", () => {
       provider: "aws",
       accountProfile: "dev-aws",
       capability: "agent-runtime",
+      backend: "aws-agentcore",
       taskType: "agent.run",
       input: {
         instruction: "do work",
+        framework: "strands",
         context: { repo: "agent-dispatch" }
       }
     });

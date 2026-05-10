@@ -2,7 +2,15 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
-import { RuntimeService, validateConfig, type AgentDispatchConfig, type DispatchRequest, type TaskStatus } from "@agentdispatch/core";
+import {
+  RuntimeService,
+  getDefaultRuntimeProfile,
+  getRuntimeProfile,
+  validateConfig,
+  type AgentDispatchConfig,
+  type DispatchRequest,
+  type TaskStatus
+} from "@agentdispatch/core";
 import { AgentDispatchClient } from "@agentdispatch/sdk";
 import { SqliteTaskStore } from "@agentdispatch/store-sqlite";
 import { AwsAgentCoreAdapter } from "@agentdispatch/adapter-aws-agentcore";
@@ -47,6 +55,7 @@ export function buildProgram(output: Pick<Console, "log" | "error"> = console): 
 
   program
     .command("run")
+    .option("--runtime <name>", "Named runtime profile")
     .option("--provider <provider>")
     .option("--account-profile <name>")
     .option("--capability <capability>")
@@ -57,6 +66,7 @@ export function buildProgram(output: Pick<Console, "log" | "error"> = console): 
     .option("--command <command>")
     .option("--framework <name>", "Worker-side agent framework name")
     .option("--context-json <json>", "JSON object passed as input.context")
+    .option("--runtime-tools-json <json>", "JSON object passed as input.runtime_tools")
     .option("--wait", "Poll until task reaches a terminal status")
     .option("--poll-interval-ms <ms>", "Wait polling interval", "1000")
     .option("--timeout-ms <ms>", "Maximum wait time", "600000")
@@ -147,39 +157,61 @@ export function sampleConfig(region: string, runtimeArn: string): AgentDispatchC
         }
       }
     },
+    runtimes: {
+      "research-agent": {
+        provider: "aws",
+        account: "dev-aws",
+        capability: "agent-runtime",
+        backend: "aws-agentcore",
+        target: { mode: "session" },
+        framework: "strands"
+      }
+    },
     defaults: {
-      provider: "aws",
-      accountProfile: "dev-aws",
-      capability: "agent-runtime",
-      backend: "aws-agentcore"
+      runtime: "research-agent"
     }
   };
 }
 
 export function createDispatchRequest(config: AgentDispatchConfig, options: Record<string, any>): DispatchRequest {
-  const provider = options.provider ?? config.defaults?.provider;
-  const accountProfile = options.accountProfile ?? config.defaults?.accountProfile;
-  const capability = options.capability ?? config.defaults?.capability;
+  const runtimeProfile = resolveRuntimeProfile(config, options.runtime);
+  const provider = options.provider ?? runtimeProfile?.provider ?? config.defaults?.provider;
+  const accountProfile = options.accountProfile ?? runtimeProfile?.account ?? config.defaults?.accountProfile;
+  const capability = options.capability ?? runtimeProfile?.capability ?? config.defaults?.capability;
+  const backend = runtimeProfile?.backend ?? config.defaults?.backend;
   const taskType = options.taskType ?? (options.command ? "command.run" : "agent.run");
   if (!provider || !accountProfile || !capability) {
-    throw new Error("Missing provider/account/capability. Pass CLI options or configure defaults in agentdispatch.config.json.");
+    throw new Error("Missing provider/account/capability. Pass CLI options or configure defaults.runtime in agentdispatch.config.json.");
   }
   return {
     provider,
     accountProfile,
     capability,
+    backend,
     taskType,
     target: {
-      mode: options.targetMode ?? "session",
-      details: parseJsonObjectOption(options.targetDetailsJson, "target-details-json")
+      mode: options.targetMode ?? runtimeProfile?.target?.mode ?? config.defaults?.targetMode ?? "session",
+      details: mergeRecords(runtimeProfile?.target?.details, parseJsonObjectOption(options.targetDetailsJson, "target-details-json"))
     },
     input: {
       instruction: options.instruction,
       command: options.command,
-      framework: options.framework,
-      context: parseJsonObjectOption(options.contextJson, "context-json")
+      framework: options.framework ?? runtimeProfile?.framework ?? config.defaults?.framework,
+      context: parseJsonObjectOption(options.contextJson, "context-json"),
+      runtime_tools: mergeRecords(
+        config.defaults?.runtimeTools,
+        runtimeProfile?.runtimeTools,
+        parseJsonObjectOption(options.runtimeToolsJson, "runtime-tools-json")
+      )
     }
   };
+}
+
+function resolveRuntimeProfile(config: AgentDispatchConfig, runtimeName?: string) {
+  if (!runtimeName) return getDefaultRuntimeProfile(config);
+  const profile = getRuntimeProfile(config, runtimeName);
+  if (!profile) throw new Error(`Runtime profile ${runtimeName} was not found.`);
+  return profile;
 }
 
 async function waitForTask(client: AgentDispatchClient, taskId: string, pollIntervalMs: number, timeoutMs: number) {
@@ -209,6 +241,11 @@ function parseJsonObjectOption(value: string | undefined, name: string): Record<
     throw new Error(`--${name} must be a JSON object.`);
   }
   return parsed as Record<string, unknown>;
+}
+
+function mergeRecords(...records: Array<Record<string, unknown> | undefined>): Record<string, unknown> | undefined {
+  const merged = Object.assign({}, ...records.filter(Boolean));
+  return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
