@@ -2,7 +2,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
-import { RuntimeService, type AgentDispatchConfig } from "@agentdispatch/core";
+import { RuntimeService, validateConfig, type AgentDispatchConfig } from "@agentdispatch/core";
 import { AgentDispatchClient } from "@agentdispatch/sdk";
 import { SqliteTaskStore } from "@agentdispatch/store-sqlite";
 import { AwsAgentCoreAdapter } from "@agentdispatch/adapter-aws-agentcore";
@@ -111,7 +111,9 @@ export async function createClient(configPath: string): Promise<AgentDispatchCli
 
 export async function loadConfig(path: string): Promise<AgentDispatchConfig> {
   const raw = await readFile(path, "utf8");
-  return JSON.parse(raw) as AgentDispatchConfig;
+  const config = JSON.parse(raw) as AgentDispatchConfig;
+  assertValidConfig(config);
+  return config;
 }
 
 export function sampleConfig(region: string, runtimeArn: string): AgentDispatchConfig {
@@ -147,4 +149,11 @@ export function sampleConfig(region: string, runtimeArn: string): AgentDispatchC
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   void buildProgram().parseAsync();
+}
+
+function assertValidConfig(config: AgentDispatchConfig): void {
+  const errors = validateConfig(config);
+  if (errors.length > 0) {
+    throw new Error(`Invalid AgentDispatch config:\n${errors.map((error) => `- ${error}`).join("\n")}`);
+  }
 }
