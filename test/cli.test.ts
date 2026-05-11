@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
-import { buildProgram, createDispatchRequest, loadConfig, sampleConfig } from "../src/index.js";
+import { buildProgram, createDispatchRequest, createDoctorReport, loadConfig, sampleConfig } from "../src/index.js";
 
 let stateDir: string | undefined;
 
@@ -83,5 +83,27 @@ describe("agentdispatch CLI", () => {
     }));
 
     await expect(loadConfig(configPath)).rejects.toThrow("provider aws does not match account dev-gcp");
+  });
+
+  it("reports preflight checks for AgentCore configuration", () => {
+    const report = createDoctorReport(sampleConfig("us-west-2", "arn:aws:bedrock-agentcore:test"));
+
+    expect(report.ok).toBe(true);
+    expect(report.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "default-runtime", status: "pass" }),
+      expect.objectContaining({ name: "backend.aws-agentcore.runtimeArn", status: "pass" }),
+      expect.objectContaining({ name: "backend.aws-agentcore.credentials", status: "pass" }),
+      expect.objectContaining({ name: "runtime.research-agent", status: "pass" })
+    ]));
+  });
+
+  it("warns when AgentCore session runtime ARN is missing", () => {
+    const config = sampleConfig("us-west-2", "");
+    const report = createDoctorReport(config);
+
+    expect(report.ok).toBe(true);
+    expect(report.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "backend.aws-agentcore.runtimeArn", status: "warn" })
+    ]));
   });
 });

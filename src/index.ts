@@ -7,6 +7,7 @@ import {
   RuntimeService,
   getDefaultRuntimeProfile,
   getRuntimeProfile,
+  listRuntimeProfiles,
   validateConfig,
   type AgentDispatchConfig,
   type DispatchRequest,
@@ -52,6 +53,24 @@ export function buildProgram(output: Pick<Console, "log" | "error"> = console): 
     .option("--config <path>", "Config file", "agentdispatch.config.json")
     .action(async (options) => {
       output.log(JSON.stringify((await createClient(options.config)).listAccountProfiles(), null, 2));
+    });
+
+  program
+    .command("doctor")
+    .description("Validate AgentDispatch config before dispatching work")
+    .option("--config <path>", "Config file", "agentdispatch.config.json")
+    .option("--json", "Emit JSON output")
+    .action(async (options) => {
+      const config = await loadConfig(options.config);
+      const report = createDoctorReport(config);
+      if (options.json) {
+        output.log(JSON.stringify(report, null, 2));
+        return;
+      }
+      output.log(formatDoctorReport(report));
+      if (!report.ok) {
+        process.exitCode = 1;
+      }
     });
 
   program
@@ -208,6 +227,80 @@ export function createDispatchRequest(config: AgentDispatchConfig, options: Reco
   };
 }
 
+export interface DoctorReport {
+  ok: boolean;
+  accounts: number;
+  backends: number;
+  runtimes: number;
+  defaultRuntime?: string;
+  checks: Array<{ name: string; status: "pass" | "warn" | "fail"; message: string }>;
+}
+
+export function createDoctorReport(config: AgentDispatchConfig): DoctorReport {
+  const checks: DoctorReport["checks"] = [];
+  const accounts = Object.keys(config.accounts).length;
+  const backends = Object.keys(config.backends).length;
+  const runtimes = listRuntimeProfiles(config);
+
+  checks.push({
+    name: "accounts",
+    status: accounts > 0 ? "pass" : "fail",
+    message: accounts > 0 ? `${accounts} account profile(s) configured.` : "No account profiles configured."
+  });
+  checks.push({
+    name: "backends",
+    status: backends > 0 ? "pass" : "fail",
+    message: backends > 0 ? `${backends} backend(s) configured.` : "No backends configured."
+  });
+  checks.push({
+    name: "default-runtime",
+    status: config.defaults?.runtime ? "pass" : "warn",
+    message: config.defaults?.runtime
+      ? `Default runtime is ${config.defaults.runtime}.`
+      : "No defaults.runtime configured; agents must pass routing fields explicitly."
+  });
+
+  for (const [name, backend] of Object.entries(config.backends)) {
+    if (backend.adapter !== "aws-agentcore") continue;
+    const runtimeArn = optionalString(backend.details?.runtimeArn ?? process.env.AGENTDISPATCH_AGENTCORE_RUNTIME_ARN);
+    checks.push({
+      name: `backend.${name}.runtimeArn`,
+      status: runtimeArn ? "pass" : "warn",
+      message: runtimeArn
+        ? `AWS AgentCore backend ${name} has a runtime ARN for session mode.`
+        : `AWS AgentCore backend ${name} has no runtimeArn; session mode dispatch will fail unless AGENTDISPATCH_AGENTCORE_RUNTIME_ARN is set.`
+    });
+    const account = config.accounts[backend.account];
+    checks.push({
+      name: `backend.${name}.credentials`,
+      status: account?.credentialSource ? "pass" : "warn",
+      message: account?.credentialSource
+        ? `AWS credentials come from ${account.credentialSource}.`
+        : `Backend ${name} account has no credentialSource.`
+    });
+  }
+
+  for (const runtime of runtimes) {
+    const backend = config.backends[runtime.backend];
+    checks.push({
+      name: `runtime.${runtime.name}`,
+      status: backend ? "pass" : "fail",
+      message: backend
+        ? `Runtime ${runtime.name} routes ${runtime.provider}/${runtime.capability}/${runtime.target?.mode ?? "session"} through ${runtime.backend}.`
+        : `Runtime ${runtime.name} references missing backend ${runtime.backend}.`
+    });
+  }
+
+  return {
+    ok: checks.every((check) => check.status !== "fail"),
+    accounts,
+    backends,
+    runtimes: runtimes.length,
+    defaultRuntime: config.defaults?.runtime,
+    checks
+  };
+}
+
 function resolveRuntimeProfile(config: AgentDispatchConfig, runtimeName?: string) {
   if (!runtimeName) return getDefaultRuntimeProfile(config);
   const profile = getRuntimeProfile(config, runtimeName);
@@ -242,6 +335,21 @@ function parseJsonObjectOption(value: string | undefined, name: string): Record<
     throw new Error(`--${name} must be a JSON object.`);
   }
   return parsed as Record<string, unknown>;
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function formatDoctorReport(report: DoctorReport): string {
+  const lines = [
+    `AgentDispatch config ${report.ok ? "OK" : "FAILED"}`,
+    `Accounts: ${report.accounts}`,
+    `Backends: ${report.backends}`,
+    `Runtimes: ${report.runtimes}`,
+    ...report.checks.map((check) => `[${check.status.toUpperCase()}] ${check.name}: ${check.message}`)
+  ];
+  return lines.join("\n");
 }
 
 function mergeRecords(...records: Array<Record<string, unknown> | undefined>): Record<string, unknown> | undefined {

@@ -7,6 +7,7 @@ agentdispatch init --region us-west-2 --runtime-arn arn:aws:bedrock-agentcore:us
 agentdispatch providers
 agentdispatch capabilities --provider aws
 agentdispatch accounts
+agentdispatch doctor
 agentdispatch run --runtime research-agent --instruction "Run a long task"
 agentdispatch status task_...
 agentdispatch logs task_...
