@@ -17,7 +17,15 @@ import { AgentDispatchClient } from "@agent-dispatch/sdk";
 import { SqliteTaskStore } from "@agent-dispatch/store-sqlite";
 import { AwsAgentCoreAdapter } from "@agent-dispatch/adapter-aws-agentcore";
 
-export function buildProgram(output: Pick<Console, "log" | "error"> = console): Command {
+export interface CliOutput {
+  log(value: string): void;
+  error(value: string): void;
+  write?(value: string): void;
+}
+
+const PLACEHOLDER_RUNTIME_ARN = "arn:aws:bedrock-agentcore:us-west-2:123456789012:agent/00000000-0000-0000-0000-000000000000:1";
+
+export function buildProgram(output: CliOutput = console): Command {
   const program = new Command();
 
   program.name("agentdispatch").description("Provider-neutral agent task dispatcher").version(readPackageVersion());
@@ -25,7 +33,7 @@ export function buildProgram(output: Pick<Console, "log" | "error"> = console): 
   program
     .command("init")
     .option("--config <path>", "Config file", "agentdispatch.config.json")
-    .option("--runtime-arn <arn>", "Existing AWS AgentCore runtime ARN", "arn:aws:bedrock-agentcore:us-west-2:123456789012:agent/00000000-0000-0000-0000-000000000000:1")
+    .option("--runtime-arn <arn>", "Existing AWS AgentCore runtime ARN")
     .option("--region <region>", "AWS region", "us-west-2")
     .action(async (options) => {
       const config = sampleConfig(options.region, options.runtimeArn);
@@ -80,7 +88,7 @@ export function buildProgram(output: Pick<Console, "log" | "error"> = console): 
     .option("--account-profile <name>")
     .option("--capability <capability>")
     .option("--task-type <type>")
-    .option("--target-mode <mode>", "Target mode", "session")
+    .option("--target-mode <mode>", "Target mode")
     .option("--target-details-json <json>", "JSON object merged into target.details")
     .option("--instruction <text>")
     .option("--command <command>")
@@ -98,7 +106,7 @@ export function buildProgram(output: Pick<Console, "log" | "error"> = console): 
       const handle = await client.dispatchTask(request);
       output.log(JSON.stringify(handle, null, 2));
       if (options.wait) {
-        const result = await waitForTask(client, handle.taskId, Number(options.pollIntervalMs), Number(options.timeoutMs));
+        const result = await waitForTask(client, handle.taskId, Number(options.pollIntervalMs), Number(options.timeoutMs), output);
         output.log(JSON.stringify(result, null, 2));
       }
     });
@@ -155,7 +163,9 @@ export async function loadConfig(path: string): Promise<AgentDispatchConfig> {
   return config;
 }
 
-export function sampleConfig(region: string, runtimeArn: string): AgentDispatchConfig {
+export function sampleConfig(region: string, runtimeArn?: string): AgentDispatchConfig {
+  const details: Record<string, unknown> = { qualifier: "DEFAULT" };
+  if (runtimeArn) details.runtimeArn = runtimeArn;
   return {
     stateDir: ".agentdispatch",
     accounts: {
@@ -171,10 +181,7 @@ export function sampleConfig(region: string, runtimeArn: string): AgentDispatchC
         capability: "agent-runtime",
         adapter: "aws-agentcore",
         account: "dev-aws",
-        details: {
-          runtimeArn,
-          qualifier: "DEFAULT"
-        }
+        details
       }
     },
     runtimes: {
@@ -202,6 +209,15 @@ export function createDispatchRequest(config: AgentDispatchConfig, options: Reco
   const taskType = options.taskType ?? (options.command ? "command.run" : "agent.run");
   if (!provider || !accountProfile || !capability) {
     throw new Error("Missing provider/account/capability. Pass CLI options or configure defaults.runtime in agentdispatch.config.json.");
+  }
+  if (taskType === "command.run" && !options.command) {
+    throw new Error("Pass --command when dispatching command.run tasks.");
+  }
+  if (taskType === "agent.run" && !options.instruction) {
+    throw new Error("Pass --instruction when dispatching agent.run tasks.");
+  }
+  if (options.command && options.instruction && !options.taskType) {
+    throw new Error("Pass either --instruction or --command, or set --task-type explicitly.");
   }
   return {
     provider,
@@ -263,11 +279,14 @@ export function createDoctorReport(config: AgentDispatchConfig): DoctorReport {
   for (const [name, backend] of Object.entries(config.backends)) {
     if (backend.adapter !== "aws-agentcore") continue;
     const runtimeArn = optionalString(backend.details?.runtimeArn ?? process.env.AGENTDISPATCH_AGENTCORE_RUNTIME_ARN);
+    const hasPlaceholderRuntimeArn = runtimeArn === PLACEHOLDER_RUNTIME_ARN;
     checks.push({
       name: `backend.${name}.runtimeArn`,
-      status: runtimeArn ? "pass" : "warn",
+      status: runtimeArn && !hasPlaceholderRuntimeArn ? "pass" : "warn",
       message: runtimeArn
-        ? `AWS AgentCore backend ${name} has a runtime ARN for session mode.`
+        ? hasPlaceholderRuntimeArn
+          ? `AWS AgentCore backend ${name} still uses the sample placeholder runtimeArn; session mode dispatch will fail until a real ARN is configured.`
+          : `AWS AgentCore backend ${name} has a runtime ARN for session mode.`
         : `AWS AgentCore backend ${name} has no runtimeArn; session mode dispatch will fail unless AGENTDISPATCH_AGENTCORE_RUNTIME_ARN is set.`
     });
     const account = config.accounts[backend.account];
@@ -308,13 +327,16 @@ function resolveRuntimeProfile(config: AgentDispatchConfig, runtimeName?: string
   return profile;
 }
 
-async function waitForTask(client: AgentDispatchClient, taskId: string, pollIntervalMs: number, timeoutMs: number) {
+async function waitForTask(client: AgentDispatchClient, taskId: string, pollIntervalMs: number, timeoutMs: number, output: CliOutput = console) {
   const startedAt = Date.now();
   let cursor = 0;
   while (Date.now() - startedAt <= timeoutMs) {
     const logs = await client.getTaskLogs(taskId, cursor);
     cursor = logs.nextCursor;
-    if (logs.data) process.stdout.write(logs.data);
+    if (logs.data) {
+      if (output.write) output.write(logs.data);
+      else process.stdout.write(logs.data);
+    }
     const task = await client.getTaskStatus(taskId);
     if (isTerminal(task.status)) {
       return client.getTaskResult(taskId);

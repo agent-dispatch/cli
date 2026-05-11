@@ -26,6 +26,20 @@ describe("agentdispatch CLI", () => {
     expect(config.runtimes["research-agent"].backend).toBe("aws-agentcore");
   });
 
+  it("does not write a fake runtime ARN when init omits one", async () => {
+    stateDir = await mkdtemp(join(tmpdir(), "agentdispatch-cli-"));
+    const configPath = join(stateDir, "agentdispatch.config.json");
+    const program = buildProgram({ log: () => undefined, error: () => undefined });
+
+    await program.parseAsync(["node", "agentdispatch", "init", "--config", configPath, "--region", "us-west-2"]);
+    const config = JSON.parse(await readFile(configPath, "utf8"));
+
+    expect(config.backends["aws-agentcore"].details.runtimeArn).toBeUndefined();
+    expect(createDoctorReport(config).checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "backend.aws-agentcore.runtimeArn", status: "warn" })
+    ]));
+  });
+
   it("builds a provider-neutral sample config", () => {
     expect(sampleConfig("us-east-1", "arn:runtime")).toMatchObject({
       defaults: { runtime: "research-agent" }
@@ -49,6 +63,25 @@ describe("agentdispatch CLI", () => {
         context: { repo: "agent-dispatch" }
       }
     });
+  });
+
+  it("preserves runtime profile target mode when CLI option is omitted", () => {
+    const config = sampleConfig("us-east-1", "arn:runtime");
+    config.runtimes!["research-agent"].target = { mode: "runtime", details: { ecrImageUri: "image" } };
+
+    const request = createDispatchRequest(config, { instruction: "do work" });
+
+    expect(request.target).toEqual({ mode: "runtime", details: { ecrImageUri: "image" } });
+  });
+
+  it("rejects empty run payloads", () => {
+    expect(() => createDispatchRequest(sampleConfig("us-east-1", "arn:runtime"), {})).toThrow("Pass --instruction");
+    expect(() => createDispatchRequest(sampleConfig("us-east-1", "arn:runtime"), { taskType: "command.run" })).toThrow("Pass --command");
+  });
+
+  it("rejects ambiguous run payloads unless task type is explicit", () => {
+    expect(() => createDispatchRequest(sampleConfig("us-east-1", "arn:runtime"), { instruction: "do work", command: "echo hi" })).toThrow("Pass either");
+    expect(createDispatchRequest(sampleConfig("us-east-1", "arn:runtime"), { taskType: "command.run", instruction: "do work", command: "echo hi" }).taskType).toBe("command.run");
   });
 
   it("infers command.run and parses target details", () => {
