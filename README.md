@@ -16,7 +16,10 @@ npm install -g @agent-dispatch/cli
 Create a local config:
 
 ```bash
-agentdispatch init --provider aws --profile dev-aws --region us-west-2 --protocol a2a
+agentdispatch init \
+  --region us-west-2 \
+  --runtime-arn arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/my-runtime \
+  --protocol a2a
 ```
 
 Validate local configuration and provider requirements:
@@ -28,10 +31,11 @@ agentdispatch doctor --config ./agentdispatch.config.json
 Run a smoke-test task:
 
 ```bash
-agentdispatch run "Summarize the current repository and identify follow-up work." \
+agentdispatch run \
   --config ./agentdispatch.config.json \
+  --instruction "Summarize the current repository and identify follow-up work." \
   --provider aws \
-  --profile dev-aws \
+  --account-profile dev-aws \
   --protocol a2a
 ```
 
