@@ -35,8 +35,9 @@ export function buildProgram(output: CliOutput = console): Command {
     .option("--config <path>", "Config file", "agentdispatch.config.json")
     .option("--runtime-arn <arn>", "Existing AWS AgentCore runtime ARN")
     .option("--region <region>", "AWS region", "us-west-2")
+    .option("--protocol <protocol>", "AgentCore runtime protocol", "a2a")
     .action(async (options) => {
-      const config = sampleConfig(options.region, options.runtimeArn);
+      const config = sampleConfig(options.region, options.runtimeArn, options.protocol);
       await writeFile(options.config, `${JSON.stringify(config, null, 2)}\n`);
       output.log(`Wrote ${options.config}`);
     });
@@ -89,10 +90,12 @@ export function buildProgram(output: CliOutput = console): Command {
     .option("--capability <capability>")
     .option("--task-type <type>")
     .option("--target-mode <mode>", "Target mode")
+    .option("--protocol <protocol>", "Runtime protocol such as a2a, http, mcp, or ag-ui")
     .option("--target-details-json <json>", "JSON object merged into target.details")
     .option("--instruction <text>")
     .option("--command <command>")
     .option("--framework <name>", "Worker-side agent framework name")
+    .option("--model-json <json>", "JSON object passed as input.model")
     .option("--context-json <json>", "JSON object passed as input.context")
     .option("--runtime-tools-json <json>", "JSON object passed as input.runtime_tools")
     .option("--wait", "Poll until task reaches a terminal status")
@@ -149,6 +152,7 @@ export async function createClientFromConfig(config: AgentDispatchConfig): Promi
         region: account.region ?? String(backend.details?.region ?? process.env.AWS_REGION ?? "us-east-1"),
         runtimeArn: String(backend.details?.runtimeArn ?? process.env.AGENTDISPATCH_AGENTCORE_RUNTIME_ARN ?? ""),
         qualifier: String(backend.details?.qualifier ?? "DEFAULT"),
+        protocol: optionalString(backend.details?.protocol ?? process.env.AGENTDISPATCH_AGENTCORE_PROTOCOL),
         defaultExecutionRoleArn: backend.details?.defaultExecutionRoleArn ? String(backend.details.defaultExecutionRoleArn) : undefined,
         deleteRuntimeOnCompletion: backend.details?.deleteRuntimeOnCompletion !== false
       });
@@ -163,8 +167,8 @@ export async function loadConfig(path: string): Promise<AgentDispatchConfig> {
   return config;
 }
 
-export function sampleConfig(region: string, runtimeArn?: string): AgentDispatchConfig {
-  const details: Record<string, unknown> = { qualifier: "DEFAULT" };
+export function sampleConfig(region: string, runtimeArn?: string, protocol = "a2a"): AgentDispatchConfig {
+  const details: Record<string, unknown> = { qualifier: "DEFAULT", protocol };
   if (runtimeArn) details.runtimeArn = runtimeArn;
   return {
     stateDir: ".agentdispatch",
@@ -190,8 +194,10 @@ export function sampleConfig(region: string, runtimeArn?: string): AgentDispatch
         account: "dev-aws",
         capability: "agent-runtime",
         backend: "aws-agentcore",
-        target: { mode: "session" },
-        framework: "strands"
+        protocol,
+        target: { mode: "session", protocol },
+        framework: "strands",
+        model: { provider: "bedrock", modelId: "anthropic.claude-3-5-sonnet" }
       }
     },
     defaults: {
@@ -207,6 +213,7 @@ export function createDispatchRequest(config: AgentDispatchConfig, options: Reco
   const capability = options.capability ?? runtimeProfile?.capability ?? config.defaults?.capability;
   const backend = runtimeProfile?.backend ?? config.defaults?.backend;
   const taskType = options.taskType ?? (options.command ? "command.run" : "agent.run");
+  const protocol = options.protocol ?? runtimeProfile?.protocol ?? runtimeProfile?.target?.protocol ?? config.defaults?.protocol;
   if (!provider || !accountProfile || !capability) {
     throw new Error("Missing provider/account/capability. Pass CLI options or configure defaults.runtime in agentdispatch.config.json.");
   }
@@ -227,12 +234,15 @@ export function createDispatchRequest(config: AgentDispatchConfig, options: Reco
     taskType,
     target: {
       mode: options.targetMode ?? runtimeProfile?.target?.mode ?? config.defaults?.targetMode ?? "session",
+      protocol,
       details: mergeRecords(runtimeProfile?.target?.details, parseJsonObjectOption(options.targetDetailsJson, "target-details-json"))
     },
     input: {
       instruction: options.instruction,
       command: options.command,
+      protocol,
       framework: options.framework ?? runtimeProfile?.framework ?? config.defaults?.framework,
+      model: parseJsonObjectOption(options.modelJson, "model-json") ?? runtimeProfile?.model ?? config.defaults?.model,
       context: parseJsonObjectOption(options.contextJson, "context-json"),
       runtime_tools: mergeRecords(
         config.defaults?.runtimeTools,
@@ -305,7 +315,7 @@ export function createDoctorReport(config: AgentDispatchConfig): DoctorReport {
       name: `runtime.${runtime.name}`,
       status: backend ? "pass" : "fail",
       message: backend
-        ? `Runtime ${runtime.name} routes ${runtime.provider}/${runtime.capability}/${runtime.target?.mode ?? "session"} through ${runtime.backend}.`
+        ? `Runtime ${runtime.name} routes ${runtime.provider}/${runtime.capability}/${runtime.target?.mode ?? "session"}/${runtime.protocol ?? runtime.target?.protocol ?? "http"} through ${runtime.backend}.`
         : `Runtime ${runtime.name} references missing backend ${runtime.backend}.`
     });
   }

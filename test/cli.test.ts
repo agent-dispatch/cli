@@ -23,7 +23,9 @@ describe("agentdispatch CLI", () => {
     expect(output[0]).toContain("Wrote");
     expect(config.accounts["dev-aws"].provider).toBe("aws");
     expect(config.backends["aws-agentcore"].details.runtimeArn).toBe("arn:test");
+    expect(config.backends["aws-agentcore"].details.protocol).toBe("a2a");
     expect(config.runtimes["research-agent"].backend).toBe("aws-agentcore");
+    expect(config.runtimes["research-agent"].protocol).toBe("a2a");
   });
 
   it("does not write a fake runtime ARN when init omits one", async () => {
@@ -57,9 +59,14 @@ describe("agentdispatch CLI", () => {
       capability: "agent-runtime",
       backend: "aws-agentcore",
       taskType: "agent.run",
+      target: {
+        protocol: "a2a"
+      },
       input: {
         instruction: "do work",
+        protocol: "a2a",
         framework: "strands",
+        model: { provider: "bedrock", modelId: "anthropic.claude-3-5-sonnet" },
         context: { repo: "agent-dispatch" }
       }
     });
@@ -71,7 +78,7 @@ describe("agentdispatch CLI", () => {
 
     const request = createDispatchRequest(config, { instruction: "do work" });
 
-    expect(request.target).toEqual({ mode: "runtime", details: { ecrImageUri: "image" } });
+    expect(request.target).toEqual({ mode: "runtime", protocol: "a2a", details: { ecrImageUri: "image" } });
   });
 
   it("rejects empty run payloads", () => {
