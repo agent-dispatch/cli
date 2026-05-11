@@ -3,7 +3,7 @@
 Human/debug command-line interface for AgentDispatch.
 
 ```bash
-agentdispatch init --region us-west-2 --runtime-arn arn:aws:bedrock-agentcore:...
+agentdispatch init --region us-west-2 --runtime-arn arn:aws:bedrock-agentcore:us-west-2:123456789012:agent/...
 agentdispatch providers
 agentdispatch capabilities --provider aws
 agentdispatch accounts

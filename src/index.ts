@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { readFileSync, realpathSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
@@ -18,12 +19,12 @@ import { AwsAgentCoreAdapter } from "@agent-dispatch/adapter-aws-agentcore";
 export function buildProgram(output: Pick<Console, "log" | "error"> = console): Command {
   const program = new Command();
 
-  program.name("agentdispatch").description("Provider-neutral agent task dispatcher").version("0.1.0");
+  program.name("agentdispatch").description("Provider-neutral agent task dispatcher").version(readPackageVersion());
 
   program
     .command("init")
     .option("--config <path>", "Config file", "agentdispatch.config.json")
-    .option("--runtime-arn <arn>", "Existing AWS AgentCore runtime ARN", "arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/example")
+    .option("--runtime-arn <arn>", "Existing AWS AgentCore runtime ARN", "arn:aws:bedrock-agentcore:us-west-2:123456789012:agent/00000000-0000-0000-0000-000000000000:1")
     .option("--region <region>", "AWS region", "us-west-2")
     .action(async (options) => {
       const config = sampleConfig(options.region, options.runtimeArn);
@@ -248,7 +249,7 @@ function mergeRecords(...records: Array<Record<string, unknown> | undefined>): R
   return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+if (isCliEntrypoint()) {
   void buildProgram().parseAsync();
 }
 
@@ -256,5 +257,23 @@ function assertValidConfig(config: AgentDispatchConfig): void {
   const errors = validateConfig(config);
   if (errors.length > 0) {
     throw new Error(`Invalid AgentDispatch config:\n${errors.map((error) => `- ${error}`).join("\n")}`);
+  }
+}
+
+function isCliEntrypoint(): boolean {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1]);
+  } catch {
+    return fileURLToPath(import.meta.url) === process.argv[1];
+  }
+}
+
+function readPackageVersion(): string {
+  try {
+    const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version?: unknown };
+    return typeof packageJson.version === "string" ? packageJson.version : "0.0.0";
+  } catch {
+    return "0.0.0";
   }
 }
