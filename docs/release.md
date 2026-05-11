@@ -1,6 +1,6 @@
 # Release Workflow
 
-`@agentdispatch/cli` is published after `@agentdispatch/core`, `@agentdispatch/sdk`, `@agentdispatch/store-sqlite`, and `@agentdispatch/adapter-aws-agentcore`.
+`@agent-dispatch/cli` is published after `@agent-dispatch/core`, `@agent-dispatch/sdk`, `@agent-dispatch/store-sqlite`, and `@agent-dispatch/adapter-aws-agentcore`.
 
 ## Prerequisites
 

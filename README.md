@@ -1,4 +1,4 @@
-# @agentdispatch/cli
+# @agent-dispatch/cli
 
 Human/debug command-line interface for AgentDispatch.
 

@@ -1,23 +1,27 @@
 {
-  "name": "@agentdispatch/cli",
+  "name": "@agent-dispatch/cli",
   "version": "0.1.0",
   "description": "Command-line interface for AgentDispatch.",
   "type": "module",
   "license": "Apache-2.0",
   "bin": {
-    "agentdispatch": "./dist/index.js"
+    "agentdispatch": "dist/index.js"
   },
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --clean",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@agentdispatch/adapter-aws-agentcore": "file:../agentdispatch-adapter-aws-agentcore",
-    "@agentdispatch/core": "file:../agentdispatch-core",
-    "@agentdispatch/sdk": "file:../agentdispatch-sdk-js",
-    "@agentdispatch/store-sqlite": "file:../agentdispatch-store-sqlite",
+    "@agent-dispatch/adapter-aws-agentcore": "^0.1.0",
+    "@agent-dispatch/core": "^0.1.0",
+    "@agent-dispatch/sdk": "^0.1.0",
+    "@agent-dispatch/store-sqlite": "^0.1.0",
     "commander": "^12.1.0"
   },
   "devDependencies": {
@@ -25,5 +29,16 @@
     "tsup": "^8.3.5",
     "typescript": "^5.7.3",
     "vitest": "^2.1.8"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/agent-dispatch/cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/agent-dispatch/cli/issues"
+  },
+  "homepage": "https://github.com/agent-dispatch/cli#readme",
+  "publishConfig": {
+    "access": "public"
   }
 }

@@ -10,10 +10,10 @@ import {
   type AgentDispatchConfig,
   type DispatchRequest,
   type TaskStatus
-} from "@agentdispatch/core";
-import { AgentDispatchClient } from "@agentdispatch/sdk";
-import { SqliteTaskStore } from "@agentdispatch/store-sqlite";
-import { AwsAgentCoreAdapter } from "@agentdispatch/adapter-aws-agentcore";
+} from "@agent-dispatch/core";
+import { AgentDispatchClient } from "@agent-dispatch/sdk";
+import { SqliteTaskStore } from "@agent-dispatch/store-sqlite";
+import { AwsAgentCoreAdapter } from "@agent-dispatch/adapter-aws-agentcore";
 
 export function buildProgram(output: Pick<Console, "log" | "error"> = console): Command {
   const program = new Command();
