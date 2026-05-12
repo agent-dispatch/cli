@@ -25,13 +25,13 @@ jobs:
         run: |
           npm --prefix .agentdispatch-deps/core install
           npm --prefix .agentdispatch-deps/core run build
-          npm --prefix .agentdispatch-deps/core pack --pack-destination "$PWD/.agentdispatch-deps"
+          (cd .agentdispatch-deps/core && npm pack --pack-destination "$GITHUB_WORKSPACE/.agentdispatch-deps")
       - name: Pack current AWS adapter
         run: |
           npm --prefix .agentdispatch-deps/adapter-aws-agentcore install
           npm --prefix .agentdispatch-deps/adapter-aws-agentcore install --no-save "$PWD"/.agentdispatch-deps/agent-dispatch-core-*.tgz
           npm --prefix .agentdispatch-deps/adapter-aws-agentcore run build
-          npm --prefix .agentdispatch-deps/adapter-aws-agentcore pack --pack-destination "$PWD/.agentdispatch-deps"
+          (cd .agentdispatch-deps/adapter-aws-agentcore && npm pack --pack-destination "$GITHUB_WORKSPACE/.agentdispatch-deps")
       - run: npm install
       - run: npm install --no-save .agentdispatch-deps/agent-dispatch-core-*.tgz .agentdispatch-deps/agent-dispatch-adapter-aws-agentcore-*.tgz
       - run: npm run typecheck
