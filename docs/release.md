@@ -5,9 +5,9 @@
 ## Prerequisites
 
 - Publish upstream AgentDispatch packages for the target compatibility line.
-- Add an npm automation token as `NPM_TOKEN` in repository secrets.
-- Replace bootstrap `file:../` package links with published package versions before the first registry release.
+- Configure npm Trusted Publisher for `agent-dispatch/cli` using workflow `.github/workflows/publish.yml`.
+- Confirm the target package version has not already been published.
 
 ## Publish
 
-Use the `Publish` GitHub Actions workflow with the target version. The workflow validates typecheck, tests, and build before publishing with npm provenance.
+Use the `Publish` GitHub Actions workflow with the target version. The workflow updates upstream AgentDispatch packages to latest compatible published versions, validates typecheck, tests, and build, then publishes through Trusted Publisher.
