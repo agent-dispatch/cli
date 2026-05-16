@@ -1,6 +1,6 @@
 {
   "name": "@agent-dispatch/cli",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Command-line interface for AgentDispatch.",
   "type": "module",
   "license": "Apache-2.0",

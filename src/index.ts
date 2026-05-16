@@ -92,6 +92,12 @@ export function buildProgram(output: CliOutput = console): Command {
     .option("--task-type <type>")
     .option("--target-mode <mode>", "Target mode")
     .option("--protocol <protocol>", "Runtime protocol such as a2a, http, mcp, or ag-ui")
+    .option("--runtime-arn <arn>", "Existing AWS AgentCore runtime ARN for session mode")
+    .option("--ecr-image-uri <uri>", "ECR image URI used to create an AgentCore runtime in runtime mode")
+    .option("--execution-role-arn <arn>", "IAM execution role ARN used to create an AgentCore runtime in runtime mode")
+    .option("--environment-json <json>", "JSON object merged into target.details.environmentVariables")
+    .option("--env <key=value>", "Environment variable for runtime mode; repeatable", collectOption, [])
+    .option("--cleanup-after-task", "Delete runtime-mode AgentCore resources after the task, including A2A runtimes")
     .option("--target-details-json <json>", "JSON object merged into target.details")
     .option("--instruction <text>")
     .option("--command <command>")
@@ -253,7 +259,11 @@ export function createDispatchRequest(config: AgentDispatchConfig, options: Reco
     target: {
       mode: options.targetMode ?? runtimeProfile?.target?.mode ?? config.defaults?.targetMode ?? "session",
       protocol,
-      details: mergeRecords(runtimeProfile?.target?.details, parseJsonObjectOption(options.targetDetailsJson, "target-details-json"))
+      details: mergeRecords(
+        runtimeProfile?.target?.details,
+        createTargetDetailsFromOptions(options),
+        parseJsonObjectOption(options.targetDetailsJson, "target-details-json")
+      )
     },
     input: {
       instruction: options.instruction,
@@ -269,6 +279,16 @@ export function createDispatchRequest(config: AgentDispatchConfig, options: Reco
       )
     }
   };
+}
+
+function createTargetDetailsFromOptions(options: Record<string, any>): Record<string, unknown> | undefined {
+  return mergeRecords(
+    stringRecord("runtimeArn", options.runtimeArn),
+    stringRecord("ecrImageUri", options.ecrImageUri),
+    stringRecord("executionRoleArn", options.executionRoleArn),
+    environmentVariablesRecord(options),
+    options.cleanupAfterTask ? { cleanupAfterTask: true } : undefined
+  );
 }
 
 export async function sendA2AFollowUpFromTask(
@@ -404,8 +424,43 @@ function parseJsonObjectOption(value: string | undefined, name: string): Record<
   return parsed as Record<string, unknown>;
 }
 
+function environmentVariablesRecord(options: Record<string, any>): Record<string, unknown> | undefined {
+  const environmentVariables = mergeRecords(
+    parseJsonObjectOption(options.environmentJson, "environment-json"),
+    parseEnvironmentOptionList(options.env)
+  );
+  return environmentVariables ? { environmentVariables } : undefined;
+}
+
+function parseEnvironmentOptionList(values: unknown): Record<string, string> | undefined {
+  if (!Array.isArray(values) || values.length === 0) return undefined;
+  const environmentVariables: Record<string, string> = {};
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    const separatorIndex = value.indexOf("=");
+    if (separatorIndex <= 0) {
+      throw new Error("--env must use KEY=value format.");
+    }
+    const key = value.slice(0, separatorIndex);
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+      throw new Error(`--env key ${key} is not a valid environment variable name.`);
+    }
+    environmentVariables[key] = value.slice(separatorIndex + 1);
+  }
+  return environmentVariables;
+}
+
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function stringRecord(key: string, value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "string" && value.length > 0 ? { [key]: value } : undefined;
+}
+
+function collectOption(value: string, previous: string[]): string[] {
+  previous.push(value);
+  return previous;
 }
 
 function formatDoctorReport(report: DoctorReport): string {

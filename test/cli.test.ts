@@ -107,6 +107,45 @@ describe("agentdispatch CLI", () => {
     });
   });
 
+  it("builds AgentCore target details from first-class flags", () => {
+    const request = createDispatchRequest(sampleConfig("us-east-1"), {
+      instruction: "run in cloud",
+      targetMode: "runtime",
+      runtimeArn: "arn:runtime",
+      ecrImageUri: "123.dkr.ecr.us-west-2.amazonaws.com/worker:latest",
+      executionRoleArn: "arn:aws:iam::123:role/exec",
+      environmentJson: "{\"AGENT_MODEL\":\"claude\"}",
+      env: ["AGENT_FRAMEWORK=openclaw", "TASK_PRIORITY=background"],
+      cleanupAfterTask: true
+    });
+
+    expect(request.target).toMatchObject({
+      mode: "runtime",
+      details: {
+        runtimeArn: "arn:runtime",
+        ecrImageUri: "123.dkr.ecr.us-west-2.amazonaws.com/worker:latest",
+        executionRoleArn: "arn:aws:iam::123:role/exec",
+        environmentVariables: {
+          AGENT_MODEL: "claude",
+          AGENT_FRAMEWORK: "openclaw",
+          TASK_PRIORITY: "background"
+        },
+        cleanupAfterTask: true
+      }
+    });
+  });
+
+  it("rejects invalid environment flags", () => {
+    expect(() => createDispatchRequest(sampleConfig("us-east-1", "arn:runtime"), {
+      instruction: "do work",
+      env: ["missing-separator"]
+    })).toThrow("KEY=value");
+    expect(() => createDispatchRequest(sampleConfig("us-east-1", "arn:runtime"), {
+      instruction: "do work",
+      env: ["1BAD=value"]
+    })).toThrow("valid environment variable name");
+  });
+
   it("rejects invalid account and backend mappings", async () => {
     stateDir = await mkdtemp(join(tmpdir(), "agentdispatch-cli-"));
     const configPath = join(stateDir, "agentdispatch.config.json");

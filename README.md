@@ -39,6 +39,31 @@ agentdispatch run \
   --protocol a2a
 ```
 
+Pass AgentCore runtime details without hand-writing `target.details` JSON:
+
+```bash
+agentdispatch run \
+  --config ./agentdispatch.config.json \
+  --instruction "Run the background research task in AgentCore." \
+  --target-mode session \
+  --runtime-arn arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/my-runtime
+```
+
+For runtime provisioning, use `--target-mode runtime` with `--ecr-image-uri` and `--execution-role-arn`:
+
+```bash
+agentdispatch run \
+  --config ./agentdispatch.config.json \
+  --instruction "Run the background research task in a fresh AgentCore runtime." \
+  --target-mode runtime \
+  --ecr-image-uri 123456789012.dkr.ecr.us-west-2.amazonaws.com/agentdispatch-worker:latest \
+  --execution-role-arn arn:aws:iam::123456789012:role/AgentDispatchAgentCoreRole \
+  --env AGENT_FRAMEWORK=openclaw \
+  --cleanup-after-task
+```
+
+Use `--env KEY=value` for runtime environment variables such as framework selectors, and add `--cleanup-after-task` when the runtime should be deleted after completion.
+
 Inspect a task:
 
 ```bash
