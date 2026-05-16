@@ -11,11 +11,12 @@ import {
   validateConfig,
   type AgentDispatchConfig,
   type DispatchRequest,
+  type TaskRecord,
   type TaskStatus
 } from "@agent-dispatch/core";
 import { AgentDispatchClient } from "@agent-dispatch/sdk";
 import { SqliteTaskStore } from "@agent-dispatch/store-sqlite";
-import { AwsAgentCoreAdapter } from "@agent-dispatch/adapter-aws-agentcore";
+import { AwsAgentCoreAdapter, sendAwsAgentCoreA2AMessage, type AwsAgentCoreA2AMessage, type AwsAgentCoreA2AResult } from "@agent-dispatch/adapter-aws-agentcore";
 
 export interface CliOutput {
   log(value: string): void;
@@ -130,6 +131,23 @@ export function buildProgram(output: CliOutput = console): Command {
   program.command("cancel").argument("<taskId>").option("--config <path>", "Config file", "agentdispatch.config.json").action(async (taskId, options) => {
     output.log(JSON.stringify(await (await createClient(options.config)).cancelTask(taskId), null, 2));
   });
+
+  program
+    .command("a2a-send")
+    .description("Send an A2A message to a spawned cloud agent using the task's cloudAgent metadata")
+    .argument("<taskId>")
+    .requiredOption("--text <text>", "Text message to send")
+    .option("--metadata-json <json>", "JSON metadata object sent with the A2A message")
+    .option("--config <path>", "Config file", "agentdispatch.config.json")
+    .action(async (taskId, options) => {
+      const client = await createClient(options.config);
+      const task = await client.getTaskStatus(taskId);
+      const result = await sendA2AFollowUpFromTask(task, {
+        text: options.text,
+        metadata: parseJsonObjectOption(options.metadataJson, "metadata-json")
+      });
+      output.log(JSON.stringify(result, null, 2));
+    });
 
   return program;
 }
@@ -251,6 +269,23 @@ export function createDispatchRequest(config: AgentDispatchConfig, options: Reco
       )
     }
   };
+}
+
+export async function sendA2AFollowUpFromTask(
+  task: TaskRecord,
+  message: AwsAgentCoreA2AMessage,
+  sender: typeof sendAwsAgentCoreA2AMessage = sendAwsAgentCoreA2AMessage
+): Promise<AwsAgentCoreA2AResult> {
+  if (!task.cloudAgent) {
+    throw new Error(`Task ${task.id} does not include cloudAgent metadata.`);
+  }
+  if (task.cloudAgent.provider !== "aws" || task.cloudAgent.backend !== "aws-agentcore") {
+    throw new Error(`Task ${task.id} cloudAgent is ${task.cloudAgent.provider}/${task.cloudAgent.backend}; only aws/aws-agentcore is supported by this CLI command.`);
+  }
+  if (task.cloudAgent.protocol !== "a2a") {
+    throw new Error(`Task ${task.id} cloudAgent protocol is ${task.cloudAgent.protocol}, not a2a.`);
+  }
+  return sender(task.cloudAgent, message);
 }
 
 export interface DoctorReport {

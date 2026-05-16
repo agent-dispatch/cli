@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
-import { buildProgram, createDispatchRequest, createDoctorReport, loadConfig, sampleConfig } from "../src/index.js";
+import { buildProgram, createDispatchRequest, createDoctorReport, loadConfig, sampleConfig, sendA2AFollowUpFromTask } from "../src/index.js";
 
 let stateDir: string | undefined;
 
@@ -135,6 +135,60 @@ describe("agentdispatch CLI", () => {
       expect.objectContaining({ name: "backend.aws-agentcore.credentials", status: "pass" }),
       expect.objectContaining({ name: "runtime.research-agent", status: "pass" })
     ]));
+  });
+
+  it("sends A2A follow-up from stored task cloudAgent metadata", async () => {
+    const result = await sendA2AFollowUpFromTask({
+      id: "task_1",
+      provider: "aws",
+      accountProfile: "dev-aws",
+      capability: "agent-runtime",
+      taskType: "agent.run",
+      target: { mode: "session", protocol: "a2a" },
+      input: { instruction: "run" },
+      backend: "aws-agentcore",
+      status: "running",
+      providerRefs: {},
+      cloudAgent: {
+        protocol: "a2a",
+        provider: "aws",
+        backend: "aws-agentcore",
+        accountProfile: "dev-aws",
+        sessionId: "session_1"
+      },
+      createdAt: new Date(0).toISOString(),
+      updatedAt: new Date(0).toISOString()
+    }, {
+      text: "continue",
+      metadata: { priority: "background" }
+    }, async (cloudAgent, message) => ({
+      text: `${cloudAgent.sessionId}:${message.text}`,
+      metadata: message.metadata
+    }));
+
+    expect(result).toEqual({
+      text: "session_1:continue",
+      metadata: { priority: "background" }
+    });
+  });
+
+  it("rejects A2A follow-up when task has no compatible cloudAgent", async () => {
+    const task = {
+      id: "task_1",
+      provider: "aws",
+      accountProfile: "dev-aws",
+      capability: "agent-runtime",
+      taskType: "agent.run",
+      target: { mode: "session" },
+      input: { instruction: "run" },
+      backend: "aws-agentcore",
+      status: "succeeded",
+      providerRefs: {},
+      createdAt: new Date(0).toISOString(),
+      updatedAt: new Date(0).toISOString()
+    } as const;
+
+    await expect(sendA2AFollowUpFromTask(task, { text: "continue" })).rejects.toThrow("does not include cloudAgent");
   });
 
   it("warns when AgentCore session runtime ARN is missing", () => {

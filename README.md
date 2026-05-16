@@ -47,11 +47,20 @@ agentdispatch logs task_...
 agentdispatch result task_...
 ```
 
+Continue an A2A cloud-agent session from the saved task metadata:
+
+```bash
+agentdispatch a2a-send task_... \
+  --config ./agentdispatch.config.json \
+  --text "Continue the investigation and focus on IAM findings."
+```
+
 ## What the CLI is for
 
 - Bootstrap `agentdispatch.config.json` without hand-writing JSON.
 - Verify account profiles, adapter config, runtime mode, and protocol settings.
 - Test `spawn_cloud_agent` outside a lead-agent environment.
+- Test A2A follow-up against the cloud agent returned by an AgentCore task.
 - Give developers a reproducible command path before wiring OpenClaw, Hermes Agent, Claude Code, or Codex through MCP.
 
 ## MCP handoff
