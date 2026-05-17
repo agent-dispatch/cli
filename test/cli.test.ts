@@ -2,7 +2,15 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
-import { buildProgram, createDispatchRequest, createDoctorReport, loadConfig, sampleConfig, sendA2AFollowUpFromTask } from "../src/index.js";
+import {
+  buildProgram,
+  createDispatchRequest,
+  createDoctorReport,
+  createDoctorReportWithLiveChecks,
+  loadConfig,
+  sampleConfig,
+  sendA2AFollowUpFromTask
+} from "../src/index.js";
 
 let stateDir: string | undefined;
 
@@ -173,6 +181,46 @@ describe("agentdispatch CLI", () => {
       expect.objectContaining({ name: "backend.aws-agentcore.runtimeArn", status: "pass" }),
       expect.objectContaining({ name: "backend.aws-agentcore.credentials", status: "pass" }),
       expect.objectContaining({ name: "runtime.research-agent", status: "pass" })
+    ]));
+  });
+
+  it("adds AWS live preflight checks for the default runtime", async () => {
+    const report = await createDoctorReportWithLiveChecks(sampleConfig("us-west-2", "arn:runtime"), {
+      checker: async (input) => [
+        {
+          name: `aws.${input.runtimeName}.credentials`,
+          status: "pass",
+          message: `credentials in ${input.region}`
+        },
+        {
+          name: `aws.${input.runtimeName}.runtime`,
+          status: input.runtimeArn ? "pass" : "fail",
+          message: input.runtimeArn ?? "missing runtime"
+        }
+      ]
+    });
+
+    expect(report.ok).toBe(true);
+    expect(report.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "aws.research-agent.credentials", status: "pass" }),
+      expect.objectContaining({ name: "aws.research-agent.runtime", status: "pass", message: "arn:runtime" })
+    ]));
+  });
+
+  it("marks AWS live preflight failures as doctor failures", async () => {
+    const report = await createDoctorReportWithLiveChecks(sampleConfig("us-west-2"), {
+      checker: async (input) => [
+        {
+          name: `aws.${input.runtimeName}.runtime`,
+          status: "fail",
+          message: "missing runtime"
+        }
+      ]
+    });
+
+    expect(report.ok).toBe(false);
+    expect(report.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "aws.research-agent.runtime", status: "fail" })
     ]));
   });
 

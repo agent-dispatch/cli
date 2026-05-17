@@ -28,6 +28,17 @@ Validate local configuration and provider requirements:
 agentdispatch doctor --config ./agentdispatch.config.json
 ```
 
+Run an opt-in AWS live preflight before first AgentCore spawn:
+
+```bash
+agentdispatch doctor \
+  --config ./agentdispatch.config.json \
+  --aws-live \
+  --runtime research-agent
+```
+
+This resolves AWS credentials through the standard AWS SDK chain and checks that the configured AgentCore runtime is reachable for session-mode dispatch.
+
 Run a smoke-test task:
 
 ```bash
