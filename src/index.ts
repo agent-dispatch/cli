@@ -4,11 +4,6 @@ import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import {
-  BedrockAgentCoreControlClient,
-  GetAgentRuntimeCommand,
-  ListAgentRuntimesCommand
-} from "@aws-sdk/client-bedrock-agentcore-control";
-import {
   RuntimeService,
   getDefaultRuntimeProfile,
   getRuntimeProfile,
@@ -21,7 +16,15 @@ import {
 } from "@agent-dispatch/core";
 import { AgentDispatchClient } from "@agent-dispatch/sdk";
 import { SqliteTaskStore } from "@agent-dispatch/store-sqlite";
-import { AwsAgentCoreAdapter, sendAwsAgentCoreA2AMessage, type AwsAgentCoreA2AMessage, type AwsAgentCoreA2AResult } from "@agent-dispatch/adapter-aws-agentcore";
+import {
+  AwsAgentCoreAdapter,
+  checkAwsAgentCoreLivePreflight,
+  sendAwsAgentCoreA2AMessage,
+  type AwsAgentCoreA2AMessage,
+  type AwsAgentCoreA2AResult,
+  type AwsAgentCoreLivePreflightCheck,
+  type AwsAgentCoreLivePreflightInput
+} from "@agent-dispatch/adapter-aws-agentcore";
 
 export interface CliOutput {
   log(value: string): void;
@@ -331,19 +334,8 @@ export interface AwsLiveDoctorOptions {
   checker?: AwsLivePreflightChecker;
 }
 
-export interface AwsLiveCheckInput {
-  runtimeName: string;
-  region: string;
-  mode: string;
-  runtimeArn?: string;
-}
-
-export interface AwsLiveCheck {
-  name: string;
-  status: "pass" | "warn" | "fail";
-  message: string;
-}
-
+export type AwsLiveCheckInput = AwsAgentCoreLivePreflightInput;
+export type AwsLiveCheck = AwsAgentCoreLivePreflightCheck;
 export type AwsLivePreflightChecker = (input: AwsLiveCheckInput) => Promise<AwsLiveCheck[]>;
 
 export function createDoctorReport(config: AgentDispatchConfig): DoctorReport {
@@ -431,7 +423,7 @@ export async function createDoctorReportWithLiveChecks(
     return refreshDoctorReportStatus(report);
   }
 
-  const checker = options.checker ?? checkAwsAgentCoreLive;
+  const checker = options.checker ?? checkAwsAgentCoreLivePreflight;
   for (const runtime of runtimes) {
     const backend = config.backends[runtime.backend];
     const account = config.accounts[runtime.account];
@@ -447,78 +439,12 @@ export async function createDoctorReportWithLiveChecks(
       report.checks.push({
         name: `aws.${runtime.name}.live`,
         status: "fail",
-        message: `AWS AgentCore live preflight failed: ${formatErrorMessage(error)}`
+        message: `AWS AgentCore live preflight failed: ${error instanceof Error ? error.message : String(error)}`
       });
     }
   }
 
   return refreshDoctorReportStatus(report);
-}
-
-export async function checkAwsAgentCoreLive(input: AwsLiveCheckInput): Promise<AwsLiveCheck[]> {
-  const checks: AwsLiveCheck[] = [];
-  const client = new BedrockAgentCoreControlClient({ region: input.region });
-  try {
-    await resolveAwsCredentials(client);
-    checks.push({
-      name: `aws.${input.runtimeName}.credentials`,
-      status: "pass",
-      message: `AWS credentials resolved for region ${input.region}.`
-    });
-  } catch (error) {
-    return [{
-      name: `aws.${input.runtimeName}.credentials`,
-      status: "fail",
-      message: `AWS credentials could not be resolved: ${formatErrorMessage(error)}`
-    }];
-  }
-
-  if (input.mode === "session") {
-    if (!input.runtimeArn) {
-      checks.push({
-        name: `aws.${input.runtimeName}.runtime`,
-        status: "fail",
-        message: "Session mode requires runtimeArn in the runtime profile, backend details, or AGENTDISPATCH_AGENTCORE_RUNTIME_ARN."
-      });
-      return checks;
-    }
-    try {
-      const parsed = parseAgentCoreRuntimeArn(input.runtimeArn);
-      const runtime = await client.send(new GetAgentRuntimeCommand({
-        agentRuntimeId: parsed.id,
-        agentRuntimeVersion: parsed.version
-      }));
-      const status = runtime.status === "READY" ? "pass" : "warn";
-      checks.push({
-        name: `aws.${input.runtimeName}.runtime`,
-        status,
-        message: `AgentCore runtime ${runtime.agentRuntimeName ?? parsed.id} is ${runtime.status ?? "UNKNOWN"} in ${input.region}.`
-      });
-    } catch (error) {
-      checks.push({
-        name: `aws.${input.runtimeName}.runtime`,
-        status: "fail",
-        message: `AgentCore runtime ${input.runtimeArn} was not reachable: ${formatErrorMessage(error)}`
-      });
-    }
-    return checks;
-  }
-
-  try {
-    await client.send(new ListAgentRuntimesCommand({ maxResults: 1 }));
-    checks.push({
-      name: `aws.${input.runtimeName}.control-plane`,
-      status: "pass",
-      message: `AgentCore control plane is reachable in ${input.region}; runtime mode can create runtimes at dispatch time.`
-    });
-  } catch (error) {
-    checks.push({
-      name: `aws.${input.runtimeName}.control-plane`,
-      status: "fail",
-      message: `AgentCore control plane was not reachable in ${input.region}: ${formatErrorMessage(error)}`
-    });
-  }
-  return checks;
 }
 
 function resolveRuntimeProfile(config: AgentDispatchConfig, runtimeName?: string) {
@@ -590,11 +516,6 @@ function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-async function resolveAwsCredentials(client: BedrockAgentCoreControlClient): Promise<unknown> {
-  const credentials = client.config.credentials;
-  return typeof credentials === "function" ? credentials() : credentials;
-}
-
 function stringRecord(key: string, value: unknown): Record<string, unknown> | undefined {
   return typeof value === "string" && value.length > 0 ? { [key]: value } : undefined;
 }
@@ -635,21 +556,6 @@ function selectAwsLiveRuntimeProfiles(config: AgentDispatchConfig, runtimeName?:
     const backend = runtime ? config.backends[runtime.backend] : undefined;
     return backend?.adapter === "aws-agentcore";
   });
-}
-
-function parseAgentCoreRuntimeArn(runtimeArn: string): { id: string; version?: string } {
-  const resource = runtimeArn.split(":").slice(5).join(":");
-  const suffix = resource.split("/").at(-1) ?? runtimeArn;
-  const [id, version] = suffix.split(":");
-  return { id, version };
-}
-
-function formatErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    const code = typeof (error as { name?: unknown }).name === "string" ? `${(error as { name: string }).name}: ` : "";
-    return `${code}${error.message}`;
-  }
-  return String(error);
 }
 
 if (isCliEntrypoint()) {

@@ -1,6 +1,6 @@
 {
   "name": "@agent-dispatch/cli",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Command-line interface for AgentDispatch.",
   "type": "module",
   "license": "Apache-2.0",
@@ -22,7 +22,6 @@
     "@agent-dispatch/core": "^0.1.0",
     "@agent-dispatch/sdk": "^0.1.0",
     "@agent-dispatch/store-sqlite": "^0.1.0",
-    "@aws-sdk/client-bedrock-agentcore-control": "^3.1048.0",
     "commander": "^12.1.0"
   },
   "devDependencies": {
