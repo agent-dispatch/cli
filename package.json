@@ -2,6 +2,16 @@
   "name": "@agent-dispatch/cli",
   "version": "0.1.7",
   "description": "Command-line interface for AgentDispatch.",
+  "keywords": [
+    "agentdispatch",
+    "cli",
+    "mcp",
+    "model-context-protocol",
+    "cloud-agents",
+    "subagents",
+    "aws-agentcore",
+    "agent-orchestration"
+  ],
   "type": "module",
   "license": "Apache-2.0",
   "bin": {
