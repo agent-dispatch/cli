@@ -108,7 +108,7 @@ After `doctor` passes, point your MCP client at the server:
   "mcpServers": {
     "agentdispatch": {
       "command": "npx",
-      "args": ["@agent-dispatch/mcp-server", "--config", "/absolute/path/agentdispatch.config.json"]
+      "args": ["-y", "@agent-dispatch/mcp-server", "--config", "/absolute/path/agentdispatch.config.json"]
     }
   }
 }
