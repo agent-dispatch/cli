@@ -1,6 +1,7 @@
 # @agent-dispatch/cli
 
 [![npm](https://img.shields.io/npm/v/@agent-dispatch/cli.svg)](https://www.npmjs.com/package/@agent-dispatch/cli)
+[![CI](https://github.com/agent-dispatch/cli/actions/workflows/ci.yml/badge.svg)](https://github.com/agent-dispatch/cli/actions/workflows/ci.yml)
 [![license](https://img.shields.io/npm/l/@agent-dispatch/cli.svg)](https://www.npmjs.com/package/@agent-dispatch/cli)
 
 Command-line tools for configuring, validating, and testing AgentDispatch before you connect it to an MCP-capable lead agent.
