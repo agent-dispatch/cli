@@ -23,7 +23,6 @@ jobs:
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
-          package-manager-cache: false
       - run: npm ci
       - run: npm update @agent-dispatch/core @agent-dispatch/adapter-aws-agentcore @agent-dispatch/sdk @agent-dispatch/store-sqlite
       - run: npm run typecheck
