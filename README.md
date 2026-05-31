@@ -124,3 +124,5 @@ npm run typecheck
 npm test
 npm run build
 ```
+
+See the [release workflow](https://github.com/agent-dispatch/cli/blob/main/docs/release.md) for npm Trusted Publisher setup, provenance publishing, and upstream package order.
