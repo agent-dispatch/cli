@@ -26,17 +26,17 @@ jobs:
           node-version: 22
       - name: Pack current core
         run: |
-          npm --prefix .agentdispatch-deps/core install
+          npm --prefix .agentdispatch-deps/core ci
           npm --prefix .agentdispatch-deps/core run build
           (cd .agentdispatch-deps/core && npm pack --pack-destination "$GITHUB_WORKSPACE/.agentdispatch-deps")
       - name: Pack current AWS adapter
         run: |
-          npm --prefix .agentdispatch-deps/adapter-aws-agentcore install
-          npm --prefix .agentdispatch-deps/adapter-aws-agentcore install --no-save "$PWD"/.agentdispatch-deps/agent-dispatch-core-*.tgz
+          npm --prefix .agentdispatch-deps/adapter-aws-agentcore ci
+          npm --prefix .agentdispatch-deps/adapter-aws-agentcore install --no-save --package-lock=false "$PWD"/.agentdispatch-deps/agent-dispatch-core-*.tgz
           npm --prefix .agentdispatch-deps/adapter-aws-agentcore run build
           (cd .agentdispatch-deps/adapter-aws-agentcore && npm pack --pack-destination "$GITHUB_WORKSPACE/.agentdispatch-deps")
-      - run: npm install
-      - run: npm install --no-save .agentdispatch-deps/agent-dispatch-core-*.tgz .agentdispatch-deps/agent-dispatch-adapter-aws-agentcore-*.tgz
+      - run: npm ci
+      - run: npm install --no-save --package-lock=false .agentdispatch-deps/agent-dispatch-core-*.tgz .agentdispatch-deps/agent-dispatch-adapter-aws-agentcore-*.tgz
       - run: npm run typecheck
       - run: npm test --if-present
       - run: npm run build

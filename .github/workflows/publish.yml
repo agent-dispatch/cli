@@ -23,7 +23,7 @@ jobs:
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
-      - run: npm install
+      - run: npm ci
       - run: npm update @agent-dispatch/core @agent-dispatch/adapter-aws-agentcore @agent-dispatch/sdk @agent-dispatch/store-sqlite
       - run: npm run typecheck
       - run: npm test
